@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import urllib.request
+import urllib.request, urllib.error
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -27,12 +27,14 @@ class MercadoPagoPixProvider:
                 "Content-Type": "application/json",
             },
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = resp.read().decode("utf-8")
         try:
-            return json.loads(body)
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"MercadoPago: invalid JSON response: {body[:500]}") from e
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"MercadoPago error {e.code}: {err_body}")
+
+        j = json.loads(body)
 
     def create_pix_payment(self, *, amount_cents: int, description: str, payer_ref: str) -> PixCheckout:
         amount = round(amount_cents / 100.0, 2)
