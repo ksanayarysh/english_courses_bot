@@ -42,16 +42,21 @@ class Db:
             amount_cents     BIGINT NOT NULL,
             currency         TEXT NOT NULL,        -- BRL
             external_id      TEXT NULL,            -- provider payment id
+            idempotency_key  TEXT NULL,            -- for provider create calls
             pix_qr_base64    TEXT NULL,
             pix_copy_paste   TEXT NULL,
             created_at       TIMESTAMPTZ NOT NULL,
             paid_at          TIMESTAMPTZ NULL
         );
 
+        -- Backward-compatible migration if payments existed before idempotency_key
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
         CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
         CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
         CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
         CREATE INDEX IF NOT EXISTS idx_payments_external ON payments(external_id);
+        CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key);
         """
         with self.connect() as con:
             with con.cursor() as cur:
@@ -118,13 +123,22 @@ class Db:
     # -------- Payments --------
     def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str = "BRL") -> str:
         pid = _new_id()
+        idem = pid  # stable idempotency key for this internal payment
         sql = """
-        INSERT INTO payments (id, user_id, provider, status, amount_cents, currency, external_id, pix_qr_base64, pix_copy_paste, created_at, paid_at)
-        VALUES (%s, %s, %s, 'pending', %s, %s, NULL, NULL, NULL, %s, NULL)
+        INSERT INTO payments (
+            id, user_id, provider, status, amount_cents, currency,
+            external_id, idempotency_key, pix_qr_base64, pix_copy_paste,
+            created_at, paid_at
+        )
+        VALUES (
+            %s, %s, %s, 'pending', %s, %s,
+            NULL, %s, NULL, NULL,
+            %s, NULL
+        )
         """
         with self.connect() as con:
             with con.cursor() as cur:
-                cur.execute(sql, (pid, user_id, provider, amount_cents, currency, now_utc()))
+                cur.execute(sql, (pid, user_id, provider, amount_cents, currency, idem, now_utc()))
             con.commit()
         return pid
 

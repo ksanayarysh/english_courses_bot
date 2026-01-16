@@ -18,10 +18,15 @@ class PaymentService:
             amount_cents=amount_cents,
             currency="BRL",
         )
+
+        # Use internal payment_id as a stable idempotency key
+        idempotency_key = payment_id
+
         checkout = self.provider.create_pix_payment(
             amount_cents=amount_cents,
             description=description,
             payer_ref=f"tg:{user_id}:{payment_id}",
+            idempotency_key=idempotency_key,
         )
         self.db.attach_pix_details(
             payment_id=payment_id,

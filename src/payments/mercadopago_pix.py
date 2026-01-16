@@ -13,19 +13,33 @@ class MercadoPagoPixProvider:
     access_token: str
     name: str = "mercadopago_pix"
 
-    def _request(self, *, method: str, url: str, payload: Optional[dict] = None) -> dict:
+    def _request(
+        self,
+        *,
+        method: str,
+        url: str,
+        payload: Optional[dict] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> dict:
         data = None
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
+
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+
+        if idempotency_key is not None:
+            if not str(idempotency_key).strip():
+                raise ValueError("idempotency_key is required and cannot be empty")
+            headers["X-Idempotency-Key"] = str(idempotency_key).strip()
 
         req = urllib.request.Request(
             url,
             data=data,
             method=method,
-            headers={
-                "Authorization": f"Bearer {self.access_token}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
@@ -37,18 +51,26 @@ class MercadoPagoPixProvider:
         j = json.loads(body)
         return j
 
-    def create_pix_payment(self, *, amount_cents: int, description: str, payer_ref: str) -> PixCheckout:
+    def create_pix_payment(
+        self,
+        *,
+        amount_cents: int,
+        description: str,
+        payer_ref: str,
+        idempotency_key: str,
+    ) -> PixCheckout:
         amount = round(amount_cents / 100.0, 2)
         j = self._request(
             method="POST",
             url="https://api.mercadopago.com/v1/payments",
+            idempotency_key=idempotency_key,
             payload={
                 "transaction_amount": amount,
                 "description": description,
                 "payment_method_id": "pix",
                 "external_reference": payer_ref,
                 "payer": {
-                    "email": "ksana32@gmail.com",
+                    "email": f"{payer_ref}@example.com",
                     "first_name": "Telegram",
                     "last_name": "User",
                 },
