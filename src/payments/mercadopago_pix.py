@@ -46,6 +46,9 @@ class MercadoPagoPixProvider:
                 "description": description,
                 "payment_method_id": "pix",
                 "external_reference": payer_ref,
+                "payer": {
+                    "email": f"{payer_ref}@example.com"
+                },
             },
         )
 
