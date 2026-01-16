@@ -6,17 +6,16 @@ from typing import Optional, Tuple, List, Dict, Any
 
 import psycopg
 from psycopg.rows import dict_row
-import secrets
-from typing import Optional, Dict, Any
-
-def new_id() -> str:
-    return secrets.token_urlsafe(16)
 
 UTC = timezone.utc
 
 
 def now_utc() -> datetime:
     return datetime.now(tz=UTC)
+
+
+def _new_id() -> str:
+    return secrets.token_urlsafe(16)
 
 
 class Db:
@@ -26,7 +25,6 @@ class Db:
     def connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row)
 
-    # db.py (замени init_db полностью)
     def init_db(self) -> None:
         ddl = """
         CREATE TABLE IF NOT EXISTS subscriptions (
@@ -36,17 +34,16 @@ class Db:
             updated_at  TIMESTAMPTZ NOT NULL
         );
 
-        -- Реальные платежи
         CREATE TABLE IF NOT EXISTS payments (
-            id              TEXT PRIMARY KEY,     -- наш payment_id (uuid/token)
+            id              TEXT PRIMARY KEY,     -- internal payment id
             user_id          BIGINT NOT NULL,
             provider         TEXT NOT NULL,        -- mercadopago_pix
             status           TEXT NOT NULL,        -- pending / paid / cancelled / expired
             amount_cents     BIGINT NOT NULL,
             currency         TEXT NOT NULL,        -- BRL
-            external_id      TEXT NULL,            -- id платежа у провайдера
-            pix_qr_base64    TEXT NULL,            -- QR картинка (base64)
-            pix_copy_paste   TEXT NULL,            -- PIX "copia e cola"
+            external_id      TEXT NULL,            -- provider payment id
+            pix_qr_base64    TEXT NULL,
+            pix_copy_paste   TEXT NULL,
             created_at       TIMESTAMPTZ NOT NULL,
             paid_at          TIMESTAMPTZ NULL
         );
@@ -118,99 +115,63 @@ class Db:
                 cur.execute(sql, (limit,))
                 return cur.fetchall() or []
 
-    # -------- Fake payments (demo) --------
-    def create_fake_payment(self, user_id: int) -> str:
-        payment_id = secrets.token_urlsafe(10)
+    # -------- Payments --------
+    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str = "BRL") -> str:
+        pid = _new_id()
         sql = """
-        INSERT INTO fake_payments (payment_id, user_id, status, created_at, paid_at)
-        VALUES (%s, %s, 'pending', %s, NULL)
+        INSERT INTO payments (id, user_id, provider, status, amount_cents, currency, external_id, pix_qr_base64, pix_copy_paste, created_at, paid_at)
+        VALUES (%s, %s, %s, 'pending', %s, %s, NULL, NULL, NULL, %s, NULL)
         """
         with self.connect() as con:
             with con.cursor() as cur:
-                cur.execute(sql, (payment_id, user_id, now_utc()))
+                cur.execute(sql, (pid, user_id, provider, amount_cents, currency, now_utc()))
             con.commit()
-        return payment_id
+        return pid
 
-    def mark_fake_payment_paid(self, payment_id: str) -> Optional[int]:
+    def attach_pix_details(self, payment_id: str, external_id: str, qr_base64: Optional[str], copy_paste: Optional[str]) -> None:
+        sql = """
+        UPDATE payments
+        SET external_id=%s, pix_qr_base64=%s, pix_copy_paste=%s
+        WHERE id=%s
+        """
         with self.connect() as con:
             with con.cursor() as cur:
-                cur.execute("SELECT user_id, status FROM fake_payments WHERE payment_id=%s", (payment_id,))
+                cur.execute(sql, (external_id, qr_base64, copy_paste, payment_id))
+            con.commit()
+
+    def get_payment(self, payment_id: str) -> Optional[Dict[str, Any]]:
+        sql = "SELECT * FROM payments WHERE id=%s"
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, (payment_id,))
+                return cur.fetchone()
+
+    def find_payment_by_external_id(self, provider: str, external_id: str) -> Optional[Dict[str, Any]]:
+        sql = "SELECT * FROM payments WHERE provider=%s AND external_id=%s"
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, (provider, external_id))
+                return cur.fetchone()
+
+    def mark_payment_paid(self, payment_id: str) -> Optional[int]:
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute("SELECT user_id, status FROM payments WHERE id=%s", (payment_id,))
                 row = cur.fetchone()
                 if not row:
                     return None
                 if row["status"] == "paid":
                     return int(row["user_id"])
-
                 cur.execute(
-                    "UPDATE fake_payments SET status='paid', paid_at=%s WHERE payment_id=%s",
+                    "UPDATE payments SET status='paid', paid_at=%s WHERE id=%s",
                     (now_utc(), payment_id),
                 )
             con.commit()
             return int(row["user_id"])
 
-
-    def create_payment(
-            self,
-            user_id: int,
-            provider: str,
-            amount_cents: int,
-            currency: str = "BRL",
-        ) -> str:
-            pid = new_id()
-            sql = """
-            INSERT INTO payments (id, user_id, provider, status, amount_cents, currency, external_id, pix_qr_base64, pix_copy_paste, created_at, paid_at)
-            VALUES (%s, %s, %s, 'pending', %s, %s, NULL, NULL, NULL, %s, NULL)
-            """
-            with self.connect() as con:
-                with con.cursor() as cur:
-                    cur.execute(sql, (pid, user_id, provider, amount_cents, currency, now_utc()))
-                con.commit()
-            return pid
-
-    def attach_pix_details(
-                self,
-                payment_id: str,
-                external_id: str,
-                qr_base64: Optional[str],
-                copy_paste: Optional[str],
-        ) -> None:
-            sql = """
-            UPDATE payments
-            SET external_id=%s, pix_qr_base64=%s, pix_copy_paste=%s
-            WHERE id=%s
-            """
-            with self.connect() as con:
-                with con.cursor() as cur:
-                    cur.execute(sql, (external_id, qr_base64, copy_paste, payment_id))
-                con.commit()
-
-        def get_payment(self, payment_id: str) -> Optional[Dict[str, Any]]:
-            sql = "SELECT * FROM payments WHERE id=%s"
-            with self.connect() as con:
-                with con.cursor() as cur:
-                    cur.execute(sql, (payment_id,))
-                    return cur.fetchone()
-
-        def mark_payment_paid(self, payment_id: str) -> Optional[int]:
-            with self.connect() as con:
-                with con.cursor() as cur:
-                    cur.execute("SELECT user_id, status FROM payments WHERE id=%s", (payment_id,))
-                    row = cur.fetchone()
-                    if not row:
-                        return None
-                    if row["status"] == "paid":
-                        return int(row["user_id"])
-                    cur.execute(
-                        "UPDATE payments SET status='paid', paid_at=%s WHERE id=%s",
-                        (now_utc(), payment_id),
-                    )
-                con.commit()
-                return int(row["user_id"])
-
-        def find_payment_by_external_id(self, provider: str, external_id: str) -> Optional[Dict[str, Any]]:
-            sql = "SELECT * FROM payments WHERE provider=%s AND external_id=%s"
-            with self.connect() as con:
-                with con.cursor() as cur:
-                    cur.execute(sql, (provider, external_id))
-                    return cur.fetchone()
-
+    def mark_payment_status(self, payment_id: str, status: str) -> None:
+        sql = "UPDATE payments SET status=%s WHERE id=%s"
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, (status, payment_id))
+            con.commit()
