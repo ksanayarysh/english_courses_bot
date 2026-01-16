@@ -4,9 +4,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-from config import Config
-from db import Db, now_utc
-from payments.service import PaymentService
+from src.config import Config
+from src.db import Db, now_utc
+from src.payments.service import PaymentService
 
 
 def main_menu() -> InlineKeyboardMarkup:
