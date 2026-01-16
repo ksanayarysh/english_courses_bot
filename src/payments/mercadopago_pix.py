@@ -35,6 +35,7 @@ class MercadoPagoPixProvider:
             raise RuntimeError(f"MercadoPago error {e.code}: {err_body}")
 
         j = json.loads(body)
+        return j
 
     def create_pix_payment(self, *, amount_cents: int, description: str, payer_ref: str) -> PixCheckout:
         amount = round(amount_cents / 100.0, 2)
@@ -47,7 +48,9 @@ class MercadoPagoPixProvider:
                 "payment_method_id": "pix",
                 "external_reference": payer_ref,
                 "payer": {
-                    "email": "ksana32@gmail.com"
+                    "email": f"{payer_ref}@example.com",
+                    "first_name": "Telegram",
+                    "last_name": "User",
                 },
             },
         )
@@ -75,7 +78,6 @@ class MercadoPagoPixProvider:
         )
         status = (j.get("status") or "").lower()
 
-        # У MercadoPago обычно: approved / pending / rejected / cancelled / refunded / charged_back
         if status == "approved":
             return "paid", status
         if status in ("cancelled",):
