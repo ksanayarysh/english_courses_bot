@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from db import Db
+from src.db import Db
 
 
 @dataclass
