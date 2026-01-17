@@ -40,17 +40,21 @@ class Db:
             provider         TEXT NOT NULL,        -- mercadopago_pix
             status           TEXT NOT NULL,        -- pending / paid / cancelled / expired
             amount_cents     BIGINT NOT NULL,
-            currency         TEXT NOT NULL,        -- BRL
+            currency         TEXT NOT NULL,        -- BRL / RUB
             external_id      TEXT NULL,            -- provider payment id
-            idempotency_key  TEXT NULL,            -- for provider create calls
+            idempotency_key  TEXT NULL,
+            pay_url          TEXT NULL,            -- redirect url (e.g. YooKassa)
+            raw_meta         JSONB NULL,
             pix_qr_base64    TEXT NULL,
             pix_copy_paste   TEXT NULL,
             created_at       TIMESTAMPTZ NOT NULL,
             paid_at          TIMESTAMPTZ NULL
         );
 
-        -- Backward-compatible migration if payments existed before idempotency_key
+        -- Backward-compatible migrations
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS pay_url TEXT;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS raw_meta JSONB;
 
         CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
         CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
@@ -123,17 +127,17 @@ class Db:
     # -------- Payments --------
     def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str = "BRL") -> str:
         pid = _new_id()
-        idem = pid  # stable idempotency key for this internal payment
+        idem = pid  # stable idempotency key for provider create calls
         sql = """
         INSERT INTO payments (
             id, user_id, provider, status, amount_cents, currency,
-            external_id, idempotency_key, pix_qr_base64, pix_copy_paste,
-            created_at, paid_at
+            external_id, idempotency_key, pay_url, raw_meta,
+            pix_qr_base64, pix_copy_paste, created_at, paid_at
         )
         VALUES (
             %s, %s, %s, 'pending', %s, %s,
             NULL, %s, NULL, NULL,
-            %s, NULL
+            NULL, NULL, %s, NULL
         )
         """
         with self.connect() as con:
@@ -141,6 +145,17 @@ class Db:
                 cur.execute(sql, (pid, user_id, provider, amount_cents, currency, idem, now_utc()))
             con.commit()
         return pid
+
+    def attach_checkout_details(self, payment_id: str, external_id: str, pay_url: Optional[str], raw_meta: Optional[dict]) -> None:
+        sql = """
+        UPDATE payments
+        SET external_id=%s, pay_url=%s, raw_meta=%s
+        WHERE id=%s
+        """
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, (external_id, pay_url, raw_meta, payment_id))
+            con.commit()
 
     def attach_pix_details(self, payment_id: str, external_id: str, qr_base64: Optional[str], copy_paste: Optional[str]) -> None:
         sql = """

@@ -4,17 +4,29 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-from src.config import Config
-from src.db import Db, now_utc
-from src.payments.service import PaymentService
+from config import Config
+from db import Db, now_utc
+from payments.service import PaymentService
+from payments.service_redirect import RedirectPaymentService
 
 
 def main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("💳 Оплатить PIX", callback_data="pay")],
+            [InlineKeyboardButton("💳 Оплата", callback_data="pay_menu")],
             [InlineKeyboardButton("🎬 Уроки (после оплаты)", callback_data="access")],
             [InlineKeyboardButton("🧾 Статус", callback_data="status")],
+        ]
+    )
+
+
+def pay_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🇧🇷 PIX (Brasil)", callback_data="pay:pix")],
+            [InlineKeyboardButton("🇷🇺 Карта / СБП (YooKassa)", callback_data="pay:yookassa")],
+            [InlineKeyboardButton("🧪 Тестовая оплата (Mock)", callback_data="pay:mock")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="menu")],
         ]
     )
 
@@ -181,7 +193,9 @@ async def cmd_list_active(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cfg: Config = context.bot_data["cfg"]
     db: Db = context.bot_data["db"]
-    pay: PaymentService = context.bot_data["pay"]
+    pay_pix: PaymentService = context.bot_data["pay_pix"]
+    pay_yk: RedirectPaymentService = context.bot_data["pay_yookassa"]
+    pay_mock: RedirectPaymentService = context.bot_data["pay_mock"]
 
     q = update.callback_query
     if not q:
@@ -196,25 +210,68 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.edit_message_text("Меню:", reply_markup=main_menu())
         return
 
-    if data == "pay":
+    if data == "pay_menu":
+        await q.edit_message_text("Выбери способ оплаты:", reply_markup=pay_menu())
+        return
+
+    if data.startswith("pay:"):
         if not uid:
             return
-        payment_id = pay.start_pix_checkout(
-            user_id=uid,
-            amount_cents=cfg.price_cents,
-            description="Доступ в приватный канал с уроками (30 дней)",
-        )
-        p = db.get_payment(payment_id) or {}
-        copy_paste = p.get("pix_copy_paste")
+        provider_key = data.split(":", 1)[1].strip()
 
-        text = (
-            "💳 <b>Оплата PIX</b>\n\n"
-            f"Сумма: <b>{cfg.price_cents/100:.2f} BRL</b>\n"
-            f"Платёж: <code>{payment_id}</code>\n\n"
-            "1) Открой банк\n2) PIX → Copia e Cola\n3) Вставь код ниже\n\n"
-            f"<code>{copy_paste or 'PIX-код не получен, см. логи'}</code>\n\n"
-            "После оплаты нажми «Проверить оплату»."
-        )
+        if provider_key == "pix":
+            payment_id = pay_pix.start_pix_checkout(
+                user_id=uid,
+                amount_cents=cfg.price_cents,
+                description="Доступ в приватный канал с уроками (30 дней)",
+            )
+            p = db.get_payment(payment_id) or {}
+            copy_paste = p.get("pix_copy_paste")
+            text = (
+                "💳 <b>Оплата PIX</b>\n\n"
+                f"Сумма: <b>{cfg.price_cents/100:.2f} BRL</b>\n"
+                f"Платёж: <code>{payment_id}</code>\n\n"
+                "1) Открой банк\n2) PIX → Copia e Cola\n3) Вставь код ниже\n\n"
+                f"<code>{copy_paste or 'PIX-код не получен, см. логи'}</code>\n\n"
+                "После оплаты нажми «Проверить оплату»."
+            )
+        elif provider_key == "yookassa":
+            payment_id = pay_yk.start_checkout(
+                user_id=uid,
+                amount_cents=cfg.price_cents,
+                description="Доступ в приватный канал с уроками (30 дней)",
+            )
+            p = db.get_payment(payment_id) or {}
+            pay_url = p.get("pay_url")
+            text = (
+                "💳 <b>Оплата (YooKassa)</b>\n\n"
+                f"Сумма: <b>{cfg.price_cents/100:.2f} RUB</b>\n"
+                f"Платёж: <code>{payment_id}</code>\n\n"
+                "Перейди по ссылке для оплаты:\n"
+                f"{pay_url or '(ссылка не получена, см. логи)'}\n\n"
+                "После оплаты вернись и нажми «Проверить оплату»."
+            )
+        elif provider_key == "mock":
+            payment_id = pay_mock.start_checkout(
+                user_id=uid,
+                amount_cents=cfg.price_cents,
+                description="TEST: Доступ в приватный канал (30 дней)",
+            )
+            p = db.get_payment(payment_id) or {}
+            pay_url = p.get("pay_url")
+            text = (
+                "🧪 <b>Тестовая оплата (мок)</b>\n\n"
+                f"Платёж: <code>{payment_id}</code>\n\n"
+                "Это не настоящая оплата.\n"
+                "Чтобы 'оплатить', открой:\n"
+                f"{cfg.public_base_url}/mock/paid?payment_id={payment_id}\n\n"
+                "И потом нажми «Проверить оплату» в боте.\n\n"
+                f"Ссылка (для вида): {pay_url or ''}"
+            )
+        else:
+            await q.edit_message_text("Неизвестный способ оплаты.", reply_markup=pay_menu())
+            return
+
         kb = InlineKeyboardMarkup(
             [
                 [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check_payment:{payment_id}")],
@@ -226,7 +283,20 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data.startswith("check_payment:"):
         payment_id = data.split(":", 1)[1].strip()
-        ok = pay.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+        p = db.get_payment(payment_id)
+        if not p:
+            await q.edit_message_text("Платёж не найден.", reply_markup=main_menu())
+            return
+
+        provider = (p.get("provider") or "").lower()
+        if provider == "mercadopago_pix":
+            ok = pay_pix.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+        elif provider == "yookassa":
+            ok = pay_yk.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+        elif provider == "mock_yookassa":
+            ok = pay_mock.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+        else:
+            ok = False
         if not ok:
             await q.edit_message_text(
                 "⏳ Оплата пока не подтверждена.\n"
@@ -289,11 +359,19 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await q.edit_message_text("Неизвестное действие.", reply_markup=main_menu())
 
 
-def build_application(cfg: Config, db: Db, pay: PaymentService) -> Application:
+def build_application(
+    cfg: Config,
+    db: Db,
+    pay_pix: PaymentService,
+    pay_yookassa: RedirectPaymentService,
+    pay_mock: RedirectPaymentService,
+) -> Application:
     app = Application.builder().token(cfg.bot_token).build()
     app.bot_data["cfg"] = cfg
     app.bot_data["db"] = db
-    app.bot_data["pay"] = pay
+    app.bot_data["pay_pix"] = pay_pix
+    app.bot_data["pay_yookassa"] = pay_yookassa
+    app.bot_data["pay_mock"] = pay_mock
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("access", cmd_access))

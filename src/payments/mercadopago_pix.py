@@ -70,7 +70,7 @@ class MercadoPagoPixProvider:
                 "payment_method_id": "pix",
                 "external_reference": payer_ref,
                 "payer": {
-                    "email": "ksana32@gmail.com",
+                    "email": f"{payer_ref}@example.com",
                     "first_name": "Telegram",
                     "last_name": "User",
                 },

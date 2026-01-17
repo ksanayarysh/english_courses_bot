@@ -17,6 +17,13 @@ class Config:
     mp_webhook_secret: str  # optional, but recommended
     price_cents: int
 
+    # Payments (YooKassa)
+    yk_shop_id: str
+    yk_secret_key: str
+
+    # Payments
+    pay_provider_default: str  # pix | yookassa | mock
+
     # Webhooks
     public_base_url: str    # e.g. https://your-service.up.railway.app
 
@@ -38,6 +45,11 @@ def load_config() -> Config:
     mp_webhook_secret = os.getenv("MP_WEBHOOK_SECRET", "").strip()
     price_cents = int(os.getenv("PRICE_CENTS", "2990").strip())
 
+    yk_shop_id = os.getenv("YK_SHOP_ID", "").strip()
+    yk_secret_key = os.getenv("YK_SECRET_KEY", "").strip()
+
+    pay_provider_default = os.getenv("PAY_PROVIDER_DEFAULT", "pix").strip().lower()
+
     public_base_url = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
 
     if not bot_token:
@@ -53,6 +65,10 @@ def load_config() -> Config:
     if not public_base_url:
         raise RuntimeError("PUBLIC_BASE_URL is missing in .env")
 
+    # YooKassa keys are required only if provider is enabled
+    if pay_provider_default == "yookassa" and (not yk_shop_id or not yk_secret_key):
+        raise RuntimeError("YK_SHOP_ID / YK_SECRET_KEY are missing in .env")
+
     return Config(
         bot_token=bot_token,
         channel_id=channel_id,
@@ -61,5 +77,8 @@ def load_config() -> Config:
         mp_access_token=mp_access_token,
         mp_webhook_secret=mp_webhook_secret,
         price_cents=price_cents,
+        yk_shop_id=yk_shop_id,
+        yk_secret_key=yk_secret_key,
+        pay_provider_default=pay_provider_default,
         public_base_url=public_base_url,
     )

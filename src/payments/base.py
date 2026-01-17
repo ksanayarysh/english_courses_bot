@@ -23,6 +23,7 @@ class PaymentProvider(Protocol):
         amount_cents: int,
         description: str,
         payer_ref: str,
+        idempotency_key: str,
     ) -> PixCheckout:
         ...
 
