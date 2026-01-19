@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, List, Dict, Any
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 
 UTC = timezone.utc
 
@@ -37,14 +39,14 @@ class Db:
         CREATE TABLE IF NOT EXISTS payments (
             id              TEXT PRIMARY KEY,     -- internal payment id
             user_id          BIGINT NOT NULL,
-            provider         TEXT NOT NULL,        -- mercadopago_pix
+            provider         TEXT NOT NULL,        -- mercadopago_pix / yookassa / mockpay
             status           TEXT NOT NULL,        -- pending / paid / cancelled / expired
             amount_cents     BIGINT NOT NULL,
             currency         TEXT NOT NULL,        -- BRL / RUB
             external_id      TEXT NULL,            -- provider payment id
-            idempotency_key  TEXT NULL,
-            pay_url          TEXT NULL,            -- redirect url (e.g. YooKassa)
-            raw_meta         JSONB NULL,
+            idempotency_key  TEXT NULL,            -- for provider create calls
+            pay_url          TEXT NULL,            -- redirect URL (YooKassa)
+            raw_meta         JSONB NULL,           -- raw provider response (optional)
             pix_qr_base64    TEXT NULL,
             pix_copy_paste   TEXT NULL,
             created_at       TIMESTAMPTZ NOT NULL,
@@ -55,11 +57,14 @@ class Db:
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS pay_url TEXT;
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS raw_meta JSONB;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_id TEXT;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT;
 
         CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
         CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
         CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
         CREATE INDEX IF NOT EXISTS idx_payments_external ON payments(external_id);
+        CREATE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider);
         CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key);
         """
         with self.connect() as con:
@@ -111,33 +116,23 @@ class Db:
 
         return (True, expires_at, "active")
 
-    def list_active(self, limit: int = 50) -> List[Dict[str, Any]]:
-        sql = """
-        SELECT user_id, status, expires_at, updated_at
-        FROM subscriptions
-        WHERE status='active'
-        ORDER BY updated_at DESC
-        LIMIT %s
-        """
-        with self.connect() as con:
-            with con.cursor() as cur:
-                cur.execute(sql, (limit,))
-                return cur.fetchall() or []
-
     # -------- Payments --------
-    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str = "BRL") -> str:
+    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str) -> str:
         pid = _new_id()
-        idem = pid  # stable idempotency key for provider create calls
+        idem = pid  # stable idempotency key for this internal payment
+
         sql = """
         INSERT INTO payments (
             id, user_id, provider, status, amount_cents, currency,
             external_id, idempotency_key, pay_url, raw_meta,
-            pix_qr_base64, pix_copy_paste, created_at, paid_at
+            pix_qr_base64, pix_copy_paste,
+            created_at, paid_at
         )
         VALUES (
             %s, %s, %s, 'pending', %s, %s,
             NULL, %s, NULL, NULL,
-            NULL, NULL, %s, NULL
+            NULL, NULL,
+            %s, NULL
         )
         """
         with self.connect() as con:
@@ -145,17 +140,6 @@ class Db:
                 cur.execute(sql, (pid, user_id, provider, amount_cents, currency, idem, now_utc()))
             con.commit()
         return pid
-
-    def attach_checkout_details(self, payment_id: str, external_id: str, pay_url: Optional[str], raw_meta: Optional[dict]) -> None:
-        sql = """
-        UPDATE payments
-        SET external_id=%s, pay_url=%s, raw_meta=%s
-        WHERE id=%s
-        """
-        with self.connect() as con:
-            with con.cursor() as cur:
-                cur.execute(sql, (external_id, pay_url, raw_meta, payment_id))
-            con.commit()
 
     def attach_pix_details(self, payment_id: str, external_id: str, qr_base64: Optional[str], copy_paste: Optional[str]) -> None:
         sql = """
@@ -168,6 +152,22 @@ class Db:
                 cur.execute(sql, (external_id, qr_base64, copy_paste, payment_id))
             con.commit()
 
+    def attach_checkout_details(self, *, payment_id: str, external_id: str, pay_url: Optional[str], raw_meta: Optional[dict]) -> None:
+        # psycopg cannot adapt plain dict by default for JSONB, wrap it.
+        meta_val = None
+        if raw_meta is not None:
+            meta_val = Json(raw_meta)
+
+        sql = """
+        UPDATE payments
+        SET external_id=%s, pay_url=%s, raw_meta=%s
+        WHERE id=%s
+        """
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, (external_id, pay_url, meta_val, payment_id))
+            con.commit()
+
     def get_payment(self, payment_id: str) -> Optional[Dict[str, Any]]:
         sql = "SELECT * FROM payments WHERE id=%s"
         with self.connect() as con:
@@ -175,7 +175,7 @@ class Db:
                 cur.execute(sql, (payment_id,))
                 return cur.fetchone()
 
-    def find_payment_by_external_id(self, provider: str, external_id: str) -> Optional[Dict[str, Any]]:
+    def find_payment_by_external_id(self, *, provider: str, external_id: str) -> Optional[Dict[str, Any]]:
         sql = "SELECT * FROM payments WHERE provider=%s AND external_id=%s"
         with self.connect() as con:
             with con.cursor() as cur:
