@@ -246,67 +246,92 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if data.startswith("pay:"):
         if not uid:
             return
+
         provider_key = data.split(":", 1)[1].strip()
 
+        # 1. Берём выбранный план пользователя
+        plan = db.get_user_plan(uid)
+        if not plan:
+            await q.edit_message_text(
+                "Сначала выбери формат обучения.",
+                reply_markup=format_menu()
+            )
+            return
+
+        # 2. Цена и описание зависят от плана
+        if plan == "mixed":
+            amount_cents = cfg.price_mixed
+            description = "Видео + практика (8 занятий / месяц)"
+        elif plan == "live":
+            amount_cents = cfg.price_live
+            description = "Все занятия вживую (8 занятий / месяц)"
+        else:
+            await q.edit_message_text("Неизвестный формат обучения.")
+            return
+
+        # 3. Запуск оплаты
         if provider_key == "pix":
             payment_id = pay_pix.start_pix_checkout(
                 user_id=uid,
-                amount_cents=cfg.price_cents,
-                description="Доступ в приватный канал с уроками (30 дней)",
+                amount_cents=amount_cents,
+                description=description,
             )
             p = db.get_payment(payment_id) or {}
             copy_paste = p.get("pix_copy_paste")
+
             text = (
                 "💳 <b>Оплата PIX</b>\n\n"
-                f"Сумма: <b>{cfg.price_cents/100:.2f} BRL</b>\n"
+                f"Формат: <b>{description}</b>\n"
+                f"Сумма: <b>{amount_cents / 100:.2f} BRL</b>\n"
                 f"Платёж: <code>{payment_id}</code>\n\n"
-                "1) Открой банк\n2) PIX → Copia e Cola\n3) Вставь код ниже\n\n"
+                "1) Открой банк\n"
+                "2) PIX → Copia e Cola\n"
+                "3) Вставь код ниже\n\n"
                 f"<code>{copy_paste or 'PIX-код не получен, см. логи'}</code>\n\n"
                 "После оплаты нажми «Проверить оплату»."
             )
+
         elif provider_key == "yookassa":
             payment_id = pay_yk.start_checkout(
                 user_id=uid,
-                amount_cents=cfg.price_cents,
-                description="Доступ в приватный канал с уроками (30 дней)",
+                amount_cents=amount_cents,
+                description=description,
             )
             p = db.get_payment(payment_id) or {}
             pay_url = p.get("pay_url")
+
             text = (
                 "💳 <b>Оплата (YooKassa)</b>\n\n"
-                f"Сумма: <b>{cfg.price_cents/100:.2f} RUB</b>\n"
+                f"Формат: <b>{description}</b>\n"
+                f"Сумма: <b>{amount_cents / 100:.2f} RUB</b>\n"
                 f"Платёж: <code>{payment_id}</code>\n\n"
                 "Перейди по ссылке для оплаты:\n"
                 f"{pay_url or '(ссылка не получена, см. логи)'}\n\n"
                 "После оплаты вернись и нажми «Проверить оплату»."
             )
+
         elif provider_key == "mock":
             payment_id = pay_mock.start_checkout(
                 user_id=uid,
-                amount_cents=cfg.price_cents,
-                description="TEST: Доступ в приватный канал (30 дней)",
+                amount_cents=amount_cents,
+                description=f"TEST: {description}",
             )
-            p = db.get_payment(payment_id) or {}
-            pay_url = p.get("pay_url")
             text = (
-                "🧪 <b>Тестовая оплата (мок)</b>\n\n"
+                "🧪 <b>Тестовая оплата</b>\n\n"
+                f"Формат: <b>{description}</b>\n"
                 f"Платёж: <code>{payment_id}</code>\n\n"
-                "Это не настоящая оплата.\n"
-                "Чтобы 'оплатить', открой:\n"
-                f"{cfg.public_base_url}/mock/paid?payment_id={payment_id}\n\n"
-                "И потом нажми «Проверить оплату» в боте.\n\n"
-                f"Ссылка (для вида): {pay_url or ''}"
+                f"{cfg.public_base_url}/mock/paid?payment_id={payment_id}"
             )
+
         else:
             await q.edit_message_text("Неизвестный способ оплаты.", reply_markup=pay_menu())
             return
 
-        kb = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check_payment:{payment_id}")],
-                [InlineKeyboardButton("⬅️ Назад", callback_data="menu")],
-            ]
-        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check_payment:{payment_id}")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data="menu")],
+        ])
+
         await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
         return
 
