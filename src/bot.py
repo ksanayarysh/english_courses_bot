@@ -250,7 +250,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         provider_key = data.split(":", 1)[1].strip()
 
         # 1. Берём выбранный план пользователя
-        plan = db.get_user_plan(uid)
+        plan = db.get_user_plan(user_id=uid)
         if not plan:
             await q.edit_message_text(
                 "Сначала выбери формат обучения.",
