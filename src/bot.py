@@ -60,15 +60,11 @@ async def create_invite_link(context: ContextTypes.DEFAULT_TYPE, channel_id: str
 # ---------------- Handlers ----------------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    name = user.first_name if user else "там"
-    text = (
-        f"Привет, {name}.\n\n"
-        "Клуб:\n"
-        "1) Оплата PIX\n"
-        "2) Доступ в приватный канал с видео\n\n"
-        "Жми кнопку."
+    name = user.first_name if user else "Незнакомец"
+    await update.message.reply_text(
+        f"Привет, {name}! Я очень рада тебя тут видеть! Выбери формат обучения:",
+        reply_markup=format_menu()
     )
-    await update.effective_message.reply_text(text, reply_markup=main_menu())
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -210,8 +206,41 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.edit_message_text("Меню:", reply_markup=main_menu())
         return
 
+    if data.startswith("plan:"):
+        if not uid:
+            return
+
+        plan = data.split(":", 1)[1]
+        db.set_user_plan(user_id=uid, plan=plan)
+
+        if plan == "mixed":
+            price = cfg.price_mixed_cents
+            desc = "Видео + практика (8 занятий / месяц)"
+        else:
+            price = cfg.price_live_cents
+            desc = "Все занятия вживую (8 занятий / месяц)"
+
+        await q.edit_message_text(
+            f"Формат выбран:\n<b>{desc}</b>\n\n"
+            f"Стоимость: <b>{price / 100:.2f}</b>\n\n"
+            "Нажми «Оплата».",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 Оплата", callback_data="pay_menu")],
+                [InlineKeyboardButton("🔁 Изменить формат", callback_data="format_menu")],
+            ])
+        )
+        return
+
     if data == "pay_menu":
         await q.edit_message_text("Выбери способ оплаты:", reply_markup=pay_menu())
+        return
+
+    if data == "format_menu":
+        await q.edit_message_text(
+            "Выбери формат обучения:",
+            reply_markup=format_menu()
+        )
         return
 
     if data.startswith("pay:"):
@@ -384,3 +413,9 @@ def build_application(
 
     app.add_handler(CallbackQueryHandler(on_callback))
     return app
+
+def format_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎥 Видео + практика (8 занятий)", callback_data="plan:mixed")],
+        [InlineKeyboardButton("🧑‍🏫 Все занятия вживую (8 занятий)", callback_data="plan:live")],
+    ])

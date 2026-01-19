@@ -12,10 +12,16 @@ class Config:
     database_url: str
     admin_ids: set[int]
 
+    course_id: str
+    course_title: str
+    welcome_video_url: str
+    lesson_interval_days: int
+
     # Payments (MercadoPago Pix)
     mp_access_token: str
     mp_webhook_secret: str  # optional, but recommended
-    price_cents: int
+    price_mixed: int
+    price_live: int
 
     # Payments (YooKassa)
     yk_shop_id: str
@@ -33,6 +39,11 @@ def load_config() -> Config:
     channel_id = os.getenv("CHANNEL_ID", "").strip()
     database_url = os.getenv("DATABASE_URL", "").strip()
 
+    course_id = os.getenv("COURSE_ID", "english_basic").strip()
+    course_title = os.getenv("COURSE_TITLE", "English Course (Basic)").strip()
+    welcome_video_url = os.getenv("WELCOME_VIDEO_URL", "https://youtu.be/FAKE_WELCOME").strip()
+    lesson_interval_days = int(os.getenv("LESSON_INTERVAL_DAYS", "7"))
+
     admin_ids: set[int] = set()
     raw_admins = os.getenv("ADMIN_IDS", "").strip()
     if raw_admins:
@@ -43,10 +54,12 @@ def load_config() -> Config:
 
     mp_access_token = os.getenv("MP_ACCESS_TOKEN", "").strip()
     mp_webhook_secret = os.getenv("MP_WEBHOOK_SECRET", "").strip()
-    price_cents = int(os.getenv("PRICE_CENTS", "2990").strip())
 
     yk_shop_id = os.getenv("YK_SHOP_ID", "").strip()
     yk_secret_key = os.getenv("YK_SECRET_KEY", "").strip()
+
+    price_mixed = int(os.getenv("PRICE_MIXED", "2990").strip())
+    price_live = int(os.getenv("PRICE_LIVE", "2990").strip())
 
     pay_provider_default = os.getenv("PAY_PROVIDER_DEFAULT", "pix").strip().lower()
 
@@ -76,9 +89,14 @@ def load_config() -> Config:
         admin_ids=admin_ids,
         mp_access_token=mp_access_token,
         mp_webhook_secret=mp_webhook_secret,
-        price_cents=price_cents,
         yk_shop_id=yk_shop_id,
         yk_secret_key=yk_secret_key,
         pay_provider_default=pay_provider_default,
         public_base_url=public_base_url,
+        course_id=course_id,
+        course_title=course_title,
+        welcome_video_url=welcome_video_url,
+        lesson_interval_days=lesson_interval_days,
+        price_mixed=price_mixed,
+        price_live=price_live
     )
