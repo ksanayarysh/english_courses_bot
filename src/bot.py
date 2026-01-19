@@ -214,10 +214,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         db.set_user_plan(user_id=uid, plan=plan)
 
         if plan == "mixed":
-            price = cfg.price_mixed_cents
+            price = cfg.price_mixed
             desc = "Видео + практика (8 занятий / месяц)"
         else:
-            price = cfg.price_live_cents
+            price = cfg.price_live
             desc = "Все занятия вживую (8 занятий / месяц)"
 
         await q.edit_message_text(
