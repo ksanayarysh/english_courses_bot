@@ -65,9 +65,8 @@ class Db:
         CREATE INDEX IF NOT EXISTS idx_payments_external ON payments(external_id);
         CREATE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider);
         CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key);
-        """
 
-        """ CREATE TABLE IF NOT EXISTS courses (
+        CREATE TABLE IF NOT EXISTS courses (
               id TEXT PRIMARY KEY,
               title TEXT NOT NULL,
               welcome_video_url TEXT NULL,
@@ -97,13 +96,44 @@ class Db:
             );
         
             CREATE INDEX IF NOT EXISTS idx_enrollments_due ON enrollments(next_lesson_at);
-        """
 
-        """CREATE TABLE IF NOT EXISTS user_plans (
+            CREATE TABLE IF NOT EXISTS user_plans (
               user_id BIGINT PRIMARY KEY,
               plan TEXT NOT NULL,                 -- 'mixed' | 'live'
               updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );  
+        
+        CREATE TABLE IF NOT EXISTS courses (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          welcome_video_url TEXT,
+          lesson_interval_days INT NOT NULL DEFAULT 7,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        
+        CREATE TABLE IF NOT EXISTS lessons (
+          id SERIAL PRIMARY KEY,
+          course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+          lesson_index INT NOT NULL,
+          title TEXT NOT NULL,
+          video_url TEXT NOT NULL,
+          materials_url TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          UNIQUE(course_id, lesson_index)
+        );
+        
+        CREATE TABLE IF NOT EXISTS enrollments (
+          user_id BIGINT NOT NULL,
+          course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+          started_at TIMESTAMPTZ NOT NULL,
+          next_lesson_index INT NOT NULL,
+          next_lesson_at TIMESTAMPTZ NOT NULL,
+          last_sent_at TIMESTAMPTZ,
+          PRIMARY KEY (user_id, course_id)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_enrollments_due
+        ON enrollments (next_lesson_at);
         """
 
         with self.connect() as con:
