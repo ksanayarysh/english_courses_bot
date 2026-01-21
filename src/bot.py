@@ -173,7 +173,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             pay_url = pending.get("pay_url")
             txt = (
                 "⏳ У тебя уже есть незавершённый платёж.\n\n"
-                f"Платёж: <code>{pending['payment_id']}</code>\n"
+                f"Платёж: <code>{pending['id']}</code>\n"
                 f"Статус: <b>pending</b>\n"
             )
             if pay_url:
