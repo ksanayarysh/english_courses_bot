@@ -9,4 +9,4 @@ class Plan(str, Enum):
 
 
 def get_plan_label(plan: str) -> str:
-    return "Все занятия вживую" if plan == Plan.LIVE_ONLY.value else "Вживую + видео"
+    return "Все занятия online" if plan == Plan.LIVE_ONLY.value else "Online + видео"

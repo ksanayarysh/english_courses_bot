@@ -42,8 +42,8 @@ class Config:
 
     def payment_description(self, plan: str) -> str:
         if plan == "live_only":
-            return "Курс: все занятия вживую (1 месяц)"
-        return "Курс: вживую + видео (1 месяц)"
+            return "Курс: все занятия online (1 месяц)"
+        return "Курс: online + видео (1 месяц)"
 
 
 def load_config() -> Config:
