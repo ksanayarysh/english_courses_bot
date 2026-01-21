@@ -1,5 +1,7 @@
 import os
 from dataclasses import dataclass
+from locale import currency
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -36,6 +38,8 @@ class Config:
 
     # Webhooks
     public_base_url: str    # e.g. https://your-service.up.railway.app
+
+    currency: str = "BRL"
 
     def price_for_plan_cents(self, plan: str) -> int:
         return self.price_live if plan == "live_only" else self.price_mixed

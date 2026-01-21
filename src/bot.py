@@ -131,11 +131,11 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if data == "pay_menu":
-        plan = db.get_user_plan(uid) or Plan.MIXED.value
+        plan = db.get_user_plan(user_id=uid) or Plan.MIXED.value
         amount = cfg.price_for_plan_cents(plan)
         await q.edit_message_text(
             f"Выбери способ оплаты.\n\nФормат: <b>{get_plan_label(plan)}</b>\n"
-            f"Сумма: <b>{amount/100:.2f} {cfg.currency}</b>",
+            f"Сумма: <b>{amount/100:.2f} </b>",
             parse_mode=ParseMode.HTML,
             reply_markup=_pay_methods_menu(cfg),
         )
@@ -143,7 +143,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data.startswith("pay:"):
         provider_key = data.split(":", 1)[1]
-        plan = db.get_user_plan(uid) or Plan.MIXED.value
+        plan = db.get_user_plan(user_id=uid) or Plan.MIXED.value
         amount_cents = cfg.price_for_plan_cents(plan)
 
         # Create a payment record first (so we always have payment_id for correlation)
