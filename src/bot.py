@@ -266,7 +266,6 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 payment_id=payment_id,
                 user_id=uid,
                 amount_cents=amount_cents,
-                currency=currency,  # <-- optional; but keep consistent
                 description="TEST: " + cfg.payment_description(plan),
             )
             db.attach_checkout_details(
