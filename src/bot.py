@@ -100,7 +100,7 @@ async def _show_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not user:
         return
     plan = db.get_user_plan(user_id=user.id) or Plan.MIXED.value
-    amount = cfg.price_for_plan_cents(plan)
+    amount = cfg.price_for_plan_currency_cents(plan, "BRL")
 
     text = (
         f"Привет, {user.first_name or 'друг'}!\n\n"
@@ -340,7 +340,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await q.edit_message_text("Платёж не найден.")
             return
         if p["status"] != "paid":
-            db.mark_payment_paid(payment_id, external_id=p.get("external_id"))
+            db.mark_payment_paid(payment_id)
+
         await _on_payment_paid(context, payment_id, manual=True)
         await q.edit_message_text("✅ Оплата подтверждена. Доступ выдан.")
         return
@@ -387,7 +388,7 @@ async def on_proof_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     p = db.get_payment(payment_id) or {}
     user_id = p.get("user_id")
-    plan = p.get("plan") or db.get_user_plan(user_id) or Plan.MIXED.value
+    plan = p.get("plan") or db.get_user_plan(user_id=user_id) or Plan.MIXED.value
 
     await _notify_admin(
         context,
@@ -422,7 +423,7 @@ async def _on_payment_paid(context: ContextTypes.DEFAULT_TYPE, payment_id: str, 
 
     p = db.get_payment(payment_id) or {}
     user_id = int(p.get("user_id"))
-    plan = (p.get("plan") or db.get_user_plan(user_id) or Plan.MIXED.value)
+    plan = (p.get("plan") or db.get_user_plan(user_id=user_id) or Plan.MIXED.value)
 
     # subscription activation
     db.set_subscription(user_id, active=True, days=cfg.subscription_days)

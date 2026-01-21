@@ -1,27 +1,54 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol, Any, Tuple
 
 from src.db import Db
 
 
+class RedirectCheckout(Protocol):
+    external_id: str
+    pay_url: str
+    raw_meta: Any
+
+
+class RedirectProvider(Protocol):
+    name: str
+
+    def create_payment(
+        self,
+        *,
+        amount_cents: int,
+        description: str,
+        payer_ref: str,
+        idempotency_key: str,
+        return_url: str,
+    ) -> RedirectCheckout: ...
+
+    def fetch_payment_status(self, *, external_id: str) -> Tuple[str, Any]: ...
+
+
 @dataclass
 class RedirectPaymentService:
-    """Service for redirect-based payments (e.g. YooKassa).
-
-    Works similarly to PaymentService for PIX, but stores a payment URL.
-    """
-
     db: Db
-    provider: object
+    provider: RedirectProvider
     return_url: str
 
-    def start_checkout(self, *, user_id: int, amount_cents: int, description: str) -> str:
+    def start_checkout(
+        self,
+        *,
+        user_id: int,
+        amount_cents: int,
+        description: str,
+        plan: str,
+        currency: str = "RUB",
+    ) -> str:
         payment_id = self.db.create_payment(
             user_id=user_id,
             provider=self.provider.name,
             amount_cents=amount_cents,
-            currency="RUB",
+            currency=currency,
+            plan=plan,
         )
 
         checkout = self.provider.create_payment(
@@ -38,6 +65,7 @@ class RedirectPaymentService:
             pay_url=checkout.pay_url,
             raw_meta=checkout.raw_meta,
         )
+
         return payment_id
 
     def refresh_and_mark_paid_if_needed(self, *, payment_id: str) -> bool:
@@ -51,10 +79,8 @@ class RedirectPaymentService:
         if not external_id:
             return False
 
-        status, raw = self.provider.fetch_payment_status(external_id=external_id)
+        status, _raw = self.provider.fetch_payment_status(external_id=external_id)
         if status == "paid":
             self.db.mark_payment_paid(payment_id)
             return True
-        if status == "cancelled":
-            self.db.mark_payment_status(payment_id, "cancelled")
         return False

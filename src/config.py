@@ -48,6 +48,7 @@ class Config:
     public_base_url: str    # e.g. https://your-service.up.railway.app
 
     currency: str = "BRL"
+    subscription_days: int = 30
 
     def price_for_plan_currency_cents(self, plan: str, currency: str) -> int:
         key = f"PRICE_{plan.upper()}_{currency.upper()}"
@@ -99,6 +100,7 @@ def load_config() -> Config:
     pay_provider_default = os.getenv("PAY_PROVIDER_DEFAULT", "pix").strip().lower()
 
     public_base_url = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    subscription_days = int(os.getenv("SUBSCRIPTION_DAYS", "30").strip())
 
     if not bot_token:
         raise RuntimeError("BOT_TOKEN is missing in .env")
@@ -135,4 +137,5 @@ def load_config() -> Config:
         lesson_interval_days=lesson_interval_days,
         card_transfer_number=card_transfer_number,
         card_transfer_holder=card_transfer_holder,
+        subscription_days=subscription_days
     )
