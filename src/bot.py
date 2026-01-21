@@ -233,6 +233,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 user_id=uid,
                 amount_cents=amount_cents,
                 description=cfg.payment_description(plan),
+                plan=plan,
+                currency=currency,
             )
 
             p = db.get_payment(payment_id) or {}
@@ -271,6 +273,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 user_id=uid,
                 amount_cents=amount_cents,
                 description="TEST: " + cfg.payment_description(plan),
+                plan=plan,
+                currency=currency,
             )
 
             # Достаём pay_url из БД (сервис уже сделал attach_checkout_details)
