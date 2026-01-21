@@ -352,13 +352,14 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await q.edit_message_text("Платёж не найден.", reply_markup=_main_menu())
             return
 
-        status = pay.get_payment_status(payment_id)
-        if status == "paid":
-            db.mark_payment_paid(payment_id, external_id=p.get("external_id"))
-            await _on_payment_paid(context, payment_id)
-            await q.edit_message_text("✅ Оплата подтверждена! Доступ выдан.", reply_markup=_main_menu())
+        paid = pay.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+
+        if paid:
+            await q.edit_message_text(
+                "✅ Оплата подтверждена! Доступ активирован."
+            )
         else:
-            await q.edit_message_text("Пока не вижу оплату. Попробуй позже.", reply_markup=_main_menu())
+            await q.answer("Пока не вижу оплату. Попробуй чуть позже.", show_alert=False)
         return
 
     if data == "back:main":
