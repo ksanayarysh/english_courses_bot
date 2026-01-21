@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+
+def _is_paid(status: str | None) -> bool:
+    s = (status or '').strip().lower()
+    return s in {'paid', 'succeeded', 'success', 'completed'}
+
 from typing import Protocol, Any, Tuple
 
 from src.db import Db
@@ -80,7 +86,7 @@ class RedirectPaymentService:
             return False
 
         status, _raw = self.provider.fetch_payment_status(external_id=external_id)
-        if status == "paid":
+        if _is_paid(status):
             self.db.mark_payment_paid(payment_id)
             return True
         return False

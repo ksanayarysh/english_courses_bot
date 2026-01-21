@@ -168,82 +168,33 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # single source of truth for currency/amount
         currency = get_currency_by_provider(provider_key)
         amount_cents = PRICES[plan][currency]
-        # pending = db.get_latest_pending_payment(user_id=uid)
-        # if pending:
-        #     pay_url = pending.get("pay_url")
-        #     txt = (
-        #         "⏳ У тебя уже есть незавершённый платёж.\n\n"
-        #         f"Платёж: <code>{pending['id']}</code>\n"
-        #         f"Статус: <b>pending</b>\n"
-        #     )
-        #     if pay_url:
-        #         txt += f"\nСсылка/инструкция:\n{pay_url}\n"
-        #
-        #     txt += "\nНажми «Проверить оплату» или «Назад»."
-
-            # await q.edit_message_text(
-            #     txt,
-            #     parse_mode=ParseMode.HTML,
-            #     reply_markup=InlineKeyboardMarkup(
-            #         [
-            #             [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{pending['id']}")],
-            #             [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
-            #         ]
-            #     ),
-            # )
-            # return
 
         if provider_key == "pix":
-            try:
-                await q.edit_message_text("⏳ Создаю PIX…", reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")]]
-                ))
-                payment_id = db.create_payment(
-                    user_id=uid,
-                    provider=provider_key,
-                    amount_cents=amount_cents,
-                    currency=currency,
-                    plan=plan,  # если твоя Db.create_payment требует plan
-                )
-                mp = pay.providers["mercadopago_pix"]
-                checkout = mp.create_pix_checkout(
-                    payment_id=payment_id,
+                # MercadoPago PIX
+            checkout = pay.start_pix_checkout(
                     user_id=uid,
                     amount_cents=amount_cents,
                     currency=currency,
+                    plan=plan,
                     description=cfg.payment_description(plan),
-                )
-                db.attach_checkout_details(
-                    payment_id=payment_id,
-                    external_id=checkout.external_id,
-                    pay_url=checkout.pay_url,
-                    raw_meta=checkout.raw_meta,
-                )
-                code = checkout.copy_paste or "(код не получен)"
-                await q.edit_message_text(
-                    (
-                        "💳 <b>Оплата PIX</b>\n\n"
-                        f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
-                        f"Платёж: <code>{checkout.payment_id}</code>\n\n"
-                        "<b>PIX Copia e Cola:</b>\n"
-                        f"<code>{code}</code>\n\n"
-                        "Откройте приложение банка → PIX → Copia e Cola и вставь код из сообщения.\n"
-                        "После оплаты нажмите «Проверить оплату»."
-                    ),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(
-                        [
-                            [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
-                            [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
-                        ]
-                    ),
-                )
-            except Exception as e:
-                logger.exception("PIX checkout failed")
-                await q.edit_message_text(
-                    "⚠️ PIX сейчас не получается создать. Попробуйте позже или выберите другой способ оплаты.",
-                    reply_markup=_pay_methods_menu(cfg),
-                )
+            )
+            code = checkout.copy_paste or "Код PIX ещё не получен."
+            await q.edit_message_text(
+                    ("💳 <b>Оплата PIX</b>"
+                    f"Сумма: <b>{amount_cents/100:.2f} {currency}</b>"
+                    f"Платёж: <code>{checkout.payment_id}</code>"
+                    "Открой банк → PIX → Copia e Cola и вставь код ниже:"
+                    f"<code>{code}</code>"
+                    "После оплаты нажми «Проверить оплату»."
+            ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{checkout.payment_id}")],
+                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                    ]
+                ),
+            )
             return
 
         if provider_key == "yookassa":
@@ -252,31 +203,31 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 return
 
             payment_id = pay_yk.start_checkout(
-                user_id=uid,
-                amount_cents=amount_cents,
-                description=cfg.payment_description(plan),
-                plan=plan,
-                currency=currency,  # или "RUB", если у тебя YooKassa только RUB
+                    user_id=uid,
+                    amount_cents=amount_cents,
+                    description=cfg.payment_description(plan),
+                    plan=plan,
+                    currency=currency,  # или "RUB", если у тебя YooKassa только RUB
             )
 
             p = db.get_payment(payment_id)
             pay_url = p.get("pay_url") if p else None
 
             await q.edit_message_text(
-                (
-                    "💳 <b>Карта / СБП (YooKassa)</b>\n\n"
-                    f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
-                    f"Платёж: <code>{payment_id}</code>\n\n"
-                    f"Ссылка на оплату:\n{pay_url or '(ссылка не получена)'}\n\n"
-                    "После оплаты вернитесь и нажмите «Проверить оплату»."
-                ),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
-                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
-                    ]
-                ),
+                    (
+                        "💳 <b>Карта / СБП (YooKassa)</b>\n\n"
+                        f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
+                        f"Платёж: <code>{payment_id}</code>\n\n"
+                        f"Ссылка на оплату:\n{pay_url or '(ссылка не получена)'}\n\n"
+                        "После оплаты вернитесь и нажмите «Проверить оплату»."
+                    ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(
+                        [
+                            [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
+                            [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                        ]
+                    ),
             )
             return
 

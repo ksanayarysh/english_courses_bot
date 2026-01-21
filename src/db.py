@@ -75,7 +75,7 @@ class Db:
               lesson_interval_days INT NOT NULL DEFAULT 7,
               created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
-        
+
             CREATE TABLE IF NOT EXISTS lessons (
               id SERIAL PRIMARY KEY,
               course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -86,7 +86,7 @@ class Db:
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
               UNIQUE(course_id, lesson_index)
             );
-        
+
             CREATE TABLE IF NOT EXISTS enrollments (
               user_id BIGINT NOT NULL,
               course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -96,7 +96,7 @@ class Db:
               last_sent_at TIMESTAMPTZ NULL,
               PRIMARY KEY (user_id, course_id)
             );
-        
+
             CREATE INDEX IF NOT EXISTS idx_enrollments_due ON enrollments(next_lesson_at);
 
             CREATE TABLE IF NOT EXISTS user_plans (
@@ -104,7 +104,7 @@ class Db:
               plan TEXT NOT NULL,                 -- 'mixed' | 'live'
               updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );  
-        
+
         CREATE TABLE IF NOT EXISTS courses (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
@@ -112,7 +112,7 @@ class Db:
           lesson_interval_days INT NOT NULL DEFAULT 7,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
-        
+
         CREATE TABLE IF NOT EXISTS lessons (
           id SERIAL PRIMARY KEY,
           course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -123,7 +123,7 @@ class Db:
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           UNIQUE(course_id, lesson_index)
         );
-        
+
         CREATE TABLE IF NOT EXISTS enrollments (
           user_id BIGINT NOT NULL,
           course_id TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
@@ -133,7 +133,7 @@ class Db:
           last_sent_at TIMESTAMPTZ,
           PRIMARY KEY (user_id, course_id)
         );
-        
+
         CREATE INDEX IF NOT EXISTS idx_enrollments_due
         ON enrollments (next_lesson_at);
         """
@@ -188,9 +188,15 @@ class Db:
         return (True, expires_at, "active")
 
     # -------- Payments --------
-    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str, plan: str | None = None) -> str:
+    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str,
+                       plan: str | None = None) -> str:
         pid = _new_id()
         idem = pid  # stable idempotency key for this internal payment
+
+        # Backward/forward compatibility: if caller did not pass a plan,
+        # we take it from user_plans (or default to MIXED).
+        if plan is None:
+            plan = self.get_user_plan(user_id=user_id) or "mixed"
 
         sql = """
         INSERT INTO payments (
@@ -212,7 +218,8 @@ class Db:
             con.commit()
         return pid
 
-    def attach_pix_details(self, payment_id: str, external_id: str, qr_base64: Optional[str], copy_paste: Optional[str]) -> None:
+    def attach_pix_details(self, payment_id: str, external_id: str, qr_base64: Optional[str],
+                           copy_paste: Optional[str]) -> None:
         sql = """
         UPDATE payments
         SET external_id=%s, pix_qr_base64=%s, pix_copy_paste=%s
@@ -223,7 +230,8 @@ class Db:
                 cur.execute(sql, (external_id, qr_base64, copy_paste, payment_id))
             con.commit()
 
-    def attach_checkout_details(self, *, payment_id: str, external_id: str, pay_url: Optional[str], raw_meta: Optional[dict]) -> None:
+    def attach_checkout_details(self, *, payment_id: str, external_id: str, pay_url: Optional[str],
+                                raw_meta: Optional[dict]) -> None:
         # psycopg cannot adapt plain dict by default for JSONB, wrap it.
         meta_val = None
         if raw_meta is not None:
@@ -245,6 +253,25 @@ class Db:
             with con.cursor() as cur:
                 cur.execute(sql, (payment_id,))
                 return cur.fetchone()
+
+    def get_latest_pending_payment(self, *, user_id: int) -> Optional[Dict[str, Any]]:
+        """Return the newest pending payment for the user (if any)."""
+        sql = (
+            "SELECT * FROM payments "
+            "WHERE user_id=%s AND status='pending' "
+            "ORDER BY created_at DESC LIMIT 1"
+        )
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, (user_id,))
+                return cur.fetchone()
+
+    def has_pending_payment(self, *, user_id: int) -> bool:
+        sql = "SELECT 1 FROM payments WHERE user_id=%s AND status='pending' LIMIT 1"
+        with self.connect() as con:
+            with con.cursor() as cur:
+                cur.execute(sql, (user_id,))
+                return cur.fetchone() is not None
 
     def find_payment_by_external_id(self, *, provider: str, external_id: str) -> Optional[Dict[str, Any]]:
         sql = "SELECT * FROM payments WHERE provider=%s AND external_id=%s"
@@ -290,7 +317,8 @@ class Db:
                 cur.execute(sql, (course_id, title, welcome_video_url, lesson_interval_days))
             con.commit()
 
-    def add_lesson(self, *, course_id: str, lesson_index: int, title: str, video_url: str, materials_url: Optional[str]) -> None:
+    def add_lesson(self, *, course_id: str, lesson_index: int, title: str, video_url: str,
+                   materials_url: Optional[str]) -> None:
         sql = """
         INSERT INTO lessons (course_id, lesson_index, title, video_url, materials_url)
         VALUES (%s, %s, %s, %s, %s)
@@ -357,7 +385,8 @@ class Db:
                 cur.execute(sql, (now, limit))
                 return cur.fetchall() or []
 
-    def advance_enrollment_after_sent(self, *, user_id: int, course_id: str, next_lesson_index: int, lesson_interval_days: int) -> None:
+    def advance_enrollment_after_sent(self, *, user_id: int, course_id: str, next_lesson_index: int,
+                                      lesson_interval_days: int) -> None:
         now = now_utc()
         next_at = now + timedelta(days=int(lesson_interval_days))
         sql = """
@@ -369,7 +398,6 @@ class Db:
             with con.cursor() as cur:
                 cur.execute(sql, (next_lesson_index, next_at, now, user_id, course_id))
             con.commit()
-
 
     def set_user_plan(self, *, user_id: int, plan: str) -> None:
         sql = """        INSERT INTO user_plans (user_id, plan, updated_at)
@@ -390,7 +418,6 @@ class Db:
                 cur.execute(sql, (user_id,))
                 row = cur.fetchone()
         return (row["plan"] if row else "mixed")  # default
-
 
     def get_latest_pending_payment(self, user_id: int) -> dict | None:
         """
