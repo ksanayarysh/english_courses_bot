@@ -168,6 +168,30 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # single source of truth for currency/amount
         currency = get_currency_by_provider(provider_key)
         amount_cents = PRICES[plan][currency]
+        pending = db.get_latest_pending_payment(user_id=uid)
+        if pending:
+            pay_url = pending.get("pay_url")
+            txt = (
+                "⏳ У тебя уже есть незавершённый платёж.\n\n"
+                f"Платёж: <code>{pending['payment_id']}</code>\n"
+                f"Статус: <b>pending</b>\n"
+            )
+            if pay_url:
+                txt += f"\nСсылка/инструкция:\n{pay_url}\n"
+
+            txt += "\nНажми «Проверить оплату» или «Назад»."
+
+            await q.edit_message_text(
+                txt,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{pending['payment_id']}")],
+                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                    ]
+                ),
+            )
+            return
 
         if provider_key == "pix":
             try:
@@ -293,6 +317,13 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if not cfg.card_transfer_number:
                 await q.edit_message_text("Перевод на карту не настроен.", reply_markup=_pay_methods_menu(cfg))
                 return
+            payment_id = db.create_payment(
+                user_id=uid,
+                provider="card_transfer",
+                amount_cents=amount_cents,
+                currency=currency,
+                plan=plan,
+            )
             holder = (cfg.card_transfer_holder or "").strip()
             holder_line = f"\nПолучатель: <b>{holder}</b>" if holder else ""
             await q.edit_message_text(

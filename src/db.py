@@ -390,3 +390,26 @@ class Db:
                 cur.execute(sql, (user_id,))
                 row = cur.fetchone()
         return (row["plan"] if row else "mixed")  # default
+
+    def get_latest_pending_payment(self, user_id: int) -> dict | None:
+        """
+        Returns the latest pending payment for the user, or None.
+        Pending = status in ('pending', 'created') depending on your statuses.
+        """
+        with  self.connect().cursor() as cur:
+            cur.execute(
+                """
+                SELECT payment_id, provider, amount_cents, currency, plan, pay_url, created_at
+                FROM payments
+                WHERE user_id = %s
+                  AND status = 'pending'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            cols = [d.name for d in cur.description]
+            return dict(zip(cols, row))
