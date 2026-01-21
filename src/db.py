@@ -188,7 +188,7 @@ class Db:
         return (True, expires_at, "active")
 
     # -------- Payments --------
-    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str, plan: str) -> str:
+    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str, plan: str | None = None) -> str:
         pid = _new_id()
         idem = pid  # stable idempotency key for this internal payment
 
