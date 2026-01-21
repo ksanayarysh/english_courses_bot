@@ -178,37 +178,48 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
         if provider_key == "pix":
-            mp = pay.providers["mercadopago_pix"]
-            checkout = mp.create_pix_checkout(
-                payment_id=payment_id,
-                user_id=uid,
-                amount_cents=amount_cents,
-                currency=currency,  # <-- FIX: was cfg.currency
-                description=cfg.payment_description(plan),
-            )
-            db.attach_checkout_details(
-                payment_id=payment_id,
-                external_id=checkout.external_id,
-                pay_url=checkout.pay_url,
-                raw_meta=checkout.raw_meta,
-            )
-            await q.edit_message_text(
-                (
-                    "💳 <b>Оплата PIX</b>\n\n"
-                    f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
-                    f"Платёж: <code>{payment_id}</code>\n\n"
-                    "Откройте приложение банка → PIX → Copia e Cola и вставь код из сообщения.\n"
-                    "После оплаты нажмите «Проверить оплату»."
-                ),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
-                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
-                    ]
-                ),
-            )
-            return
+            try:
+                await q.edit_message_text("⏳ Создаю PIX…", reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")]]
+                ))
+                checkout = pay.start_pix_checkout(
+                    user_id=uid,
+                    amount_cents=amount_cents,
+                    currency=currency,
+                    plan=plan,
+                    description=cfg.payment_description(plan),
+                )
+
+                code = checkout.copy_paste or "(код не получен)"
+                db.attach_checkout_details(
+                    payment_id=payment_id,
+                    external_id=checkout.external_id,
+                    pay_url=checkout.pay_url,
+                    raw_meta=checkout.raw_meta,
+                )
+                await q.edit_message_text(
+                    (
+                        "💳 <b>Оплата PIX</b>\n\n"
+                        f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
+                        f"Платёж: <code>{checkout.payment_id}</code>\n\n"
+                        "Откройте приложение банка → PIX → Copia e Cola и вставь код из сообщения.\n"
+                        "После оплаты нажмите «Проверить оплату»."
+                    ),
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
+                            [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                        ]
+                    ),
+                )
+            except Exception as e:
+                logger.exception("PIX checkout failed")
+                await q.edit_message_text(
+                    "⚠️ PIX сейчас не получается создать. Попробуйте позже или выбери другой способ оплаты.",
+                    reply_markup=_pay_methods_menu(cfg),
+                )
+                return
 
         if provider_key == "yookassa":
             if not pay_yk:
@@ -444,6 +455,11 @@ async def _on_payment_paid(context: ContextTypes.DEFAULT_TYPE, payment_id: str, 
 
     # For live_only: do nothing automatic with lessons
 
+import logging
+logger = logging.getLogger(__name__)
+
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.exception("Unhandled error: %s", context.error)
 
 def build_application(cfg: Config, db: Db, pay: PaymentService, pay_yookassa: Optional[RedirectPaymentService] = None, pay_mock: Optional[RedirectPaymentService] = None) -> Application:
     app = Application.builder().token(cfg.bot_token).build()
@@ -459,4 +475,5 @@ def build_application(cfg: Config, db: Db, pay: PaymentService, pay_yookassa: Op
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, on_proof_message))
+    app.add_error_handler(on_error)
     return app
