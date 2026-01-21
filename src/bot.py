@@ -33,8 +33,8 @@ def _main_menu() -> InlineKeyboardMarkup:
 def _plans_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🧑‍🏫 Все занятия вживую", callback_data="plan:live_only")],
-            [InlineKeyboardButton("🎥 Вживую + видео", callback_data="plan:mixed")],
+            [InlineKeyboardButton("🧑‍🏫 Все занятия online", callback_data="plan:live_only")],
+            [InlineKeyboardButton("🎥 Online + видео", callback_data="plan:mixed")],
         ]
     )
 
@@ -78,7 +78,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         plan = Plan.MIXED.value
 
     await update.effective_message.reply_text(
-        "Привет! 👋\n\nВыбери формат обучения:",
+        "Привет! Я очень рада вас тут видеть! 👋\n\nВыберите формат обучения:",
         reply_markup=_plans_menu(),
     )
 
