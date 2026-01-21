@@ -186,7 +186,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
                     [
-                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{pending['payment_id']}")],
+                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{pending['id']}")],
                         [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
                     ]
                 ),
