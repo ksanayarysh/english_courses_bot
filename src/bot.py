@@ -190,18 +190,20 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     description=cfg.payment_description(plan),
                 )
 
-                code = checkout.copy_paste or "(код не получен)"
-                db.attach_checkout_details(
-                    payment_id=payment_id,
+                db.attach_pix_details(
+                    payment_id=checkout.payment_id,
                     external_id=checkout.external_id,
-                    pay_url=checkout.pay_url,
-                    raw_meta=checkout.raw_meta,
+                    qr_base64=checkout.qr_base64,
+                    copy_paste=checkout.copy_paste,
                 )
+                code = checkout.copy_paste or "(код не получен)"
                 await q.edit_message_text(
                     (
                         "💳 <b>Оплата PIX</b>\n\n"
                         f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
                         f"Платёж: <code>{checkout.payment_id}</code>\n\n"
+                        "<b>PIX Copia e Cola:</b>\n"
+                        f"<code>{code}</code>\n\n"
                         "Откройте приложение банка → PIX → Copia e Cola и вставь код из сообщения.\n"
                         "После оплаты нажмите «Проверить оплату»."
                     ),
