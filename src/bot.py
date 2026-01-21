@@ -24,7 +24,6 @@ def _main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("💳 Оплата", callback_data="pay_menu")],
-            [InlineKeyboardButton("🎬 Уроки (после оплаты)", callback_data="access_menu")],
             [InlineKeyboardButton("🧾 Статус", callback_data="status_menu")],
         ]
     )
