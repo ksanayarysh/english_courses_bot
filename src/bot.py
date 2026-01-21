@@ -169,32 +169,31 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         currency = get_currency_by_provider(provider_key)
         amount_cents = PRICES[plan][currency]
 
-        payment_id = db.create_payment(
-            user_id=uid,
-            provider=provider_key,
-            amount_cents=amount_cents,
-            currency=currency,  # <-- FIX: was cfg.currency
-            plan=plan,
-        )
-
         if provider_key == "pix":
             try:
                 await q.edit_message_text("⏳ Создаю PIX…", reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")]]
                 ))
-                checkout = pay.start_pix_checkout(
+                payment_id = db.create_payment(
+                    user_id=uid,
+                    provider=provider_key,
+                    amount_cents=amount_cents,
+                    currency=currency,
+                    plan=plan,  # если твоя Db.create_payment требует plan
+                )
+                mp = pay.providers["mercadopago_pix"]
+                checkout = mp.create_pix_checkout(
+                    payment_id=payment_id,
                     user_id=uid,
                     amount_cents=amount_cents,
                     currency=currency,
-                    plan=plan,
                     description=cfg.payment_description(plan),
                 )
-
-                db.attach_pix_details(
-                    payment_id=checkout.payment_id,
+                db.attach_checkout_details(
+                    payment_id=payment_id,
                     external_id=checkout.external_id,
-                    qr_base64=checkout.qr_base64,
-                    copy_paste=checkout.copy_paste,
+                    pay_url=checkout.pay_url,
+                    raw_meta=checkout.raw_meta,
                 )
                 code = checkout.copy_paste or "(код не получен)"
                 await q.edit_message_text(
@@ -228,25 +227,23 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await q.edit_message_text("YooKassa не настроена.", reply_markup=_pay_methods_menu(cfg))
                 return
 
-            # IMPORTANT: сервис сам создаёт payment + attach_checkout_details
             payment_id = pay_yk.start_checkout(
                 user_id=uid,
                 amount_cents=amount_cents,
                 description=cfg.payment_description(plan),
                 plan=plan,
-                currency=currency,
+                currency=currency,  # или "RUB", если у тебя YooKassa только RUB
             )
 
-            p = db.get_payment(payment_id) or {}
-            pay_url = p.get("pay_url")
-            currency_db = p.get("currency") or currency  # на случай если сервис жёстко шьёт RUB
+            p = db.get_payment(payment_id)
+            pay_url = p.get("pay_url") if p else None
 
             await q.edit_message_text(
                 (
                     "💳 <b>Карта / СБП (YooKassa)</b>\n\n"
-                    f"Сумма: <b>{amount_cents / 100:.2f} {currency_db}</b>\n"
+                    f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
                     f"Платёж: <code>{payment_id}</code>\n\n"
-                    f"Ссылка на оплату:\n{pay_url or '(ссылка не найдена)'}\n\n"
+                    f"Ссылка на оплату:\n{pay_url or '(ссылка не получена)'}\n\n"
                     "После оплаты вернитесь и нажмите «Проверить оплату»."
                 ),
                 parse_mode=ParseMode.HTML,
@@ -264,28 +261,22 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await q.edit_message_text("Mock не настроен.", reply_markup=_pay_methods_menu(cfg))
                 return
 
-            await q.edit_message_text("⏳ Создаю mock…", reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")]]
-            ))
-
-            # IMPORTANT: pay_mock.start_checkout сам создаёт payment и возвращает payment_id
             payment_id = pay_mock.start_checkout(
                 user_id=uid,
                 amount_cents=amount_cents,
                 description="TEST: " + cfg.payment_description(plan),
                 plan=plan,
-                currency=currency,
+                currency=currency,  # если сервис поддерживает
             )
 
-            # Достаём pay_url из БД (сервис уже сделал attach_checkout_details)
             p = db.get_payment(payment_id)
-            pay_url = (p or {}).get("pay_url")
+            pay_url = p.get("pay_url") if p else None
 
             await q.edit_message_text(
                 (
                     "🧪 <b>Тестовая оплата (mock)</b>\n\n"
                     f"Платёж: <code>{payment_id}</code>\n\n"
-                    f"Открой ссылку и отметь как оплачено:\n{pay_url or '(ссылка не найдена)'}\n\n"
+                    f"Открой ссылку и отметь как оплачено:\n{pay_url or '(ссылка не получена)'}\n\n"
                     "Затем нажми «Проверить оплату»."
                 ),
                 parse_mode=ParseMode.HTML,
@@ -358,28 +349,82 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         provider_key = p["provider"]
+        was_paid = (p.get("status") == "paid")
 
         svc = {
-            "pix": pay,  # MercadoPago PIX service
+            "pix": pay,          # MercadoPago PIX service
             "yookassa": pay_yk,  # Redirect/YooKassa service
-            "mock": pay_mock,  # Redirect/Mock service
-            "card_transfer": None,  # тут только ручная проверка
+            "mock": pay_mock,    # Redirect/Mock service
+            "card_transfer": None,
         }.get(provider_key)
 
         if provider_key == "card_transfer":
-            await q.answer("Ожидаем подтверждение админом.", show_alert=True)
+            await q.edit_message_text(
+                "⏳ Ожидаем подтверждение админом.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                    ]
+                ),
+            )
             return
 
         if not svc:
-            await q.answer("Не могу проверить этот способ оплаты.", show_alert=True)
+            await q.edit_message_text(
+                "⚠️ Не могу проверить этот способ оплаты.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                    ]
+                ),
+            )
             return
 
-        paid = svc.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+        # Покажем явную реакцию на клик
+        await q.edit_message_text(
+            "⏳ Проверяю оплату…",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
+                    [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                ]
+            ),
+        )
 
-        if paid:
-            await q.edit_message_text("✅ Оплата подтверждена! Доступ активирован.")
+        try:
+            paid = svc.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+        except Exception:
+            logger.exception("Payment check failed: payment_id=%s provider=%s", payment_id, provider_key)
+            await q.edit_message_text(
+                "⚠️ Ошибка при проверке оплаты. Попробуй ещё раз чуть позже.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
+                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                    ]
+                ),
+            )
+            return
+
+        p2 = db.get_payment(payment_id) or {}
+        now_paid = (p2.get("status") == "paid") or bool(paid)
+
+        if now_paid and not was_paid:
+            await _on_payment_paid(context, payment_id, manual=False)
+
+        if now_paid:
+            await q.edit_message_text("✅ Оплата подтверждена! Доступ активирован.", reply_markup=_main_menu())
         else:
-            await q.answer("Пока не вижу оплату. Попробуй чуть позже.", show_alert=False)
+            await q.edit_message_text(
+                "❌ Оплата пока не найдена.\n\n"
+                "Если ты уже отметила оплату в mock-странице, подожди пару секунд и нажми ещё раз.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("🔄 Проверить оплату", callback_data=f"check:{payment_id}")],
+                        [InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")],
+                    ]
+                ),
+            )
         return
 
     if data == "back:main":
