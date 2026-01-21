@@ -74,7 +74,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Ensure we have a plan (default mixed)
     plan = db.get_user_plan(user_id=user.id)
     if plan is None:
-        db.set_user_plan(user.id, Plan.MIXED.value)
+        db.set_user_plan(user_id=user.id, plan=Plan.MIXED.value)
         plan = Plan.MIXED.value
 
     await update.effective_message.reply_text(
@@ -123,7 +123,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         plan = data.split(":", 1)[1]
         if plan not in (Plan.LIVE_ONLY.value, Plan.MIXED.value):
             plan = Plan.MIXED.value
-        db.set_user_plan(uid, plan)
+        db.set_user_plan(user_id=uid, plan=plan)
         await q.edit_message_text(
             f"Ок, выбран формат: <b>{get_plan_label(plan)}</b>\n\nТеперь главное меню:",
             parse_mode=ParseMode.HTML,
