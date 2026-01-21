@@ -14,7 +14,7 @@ class MockYooKassaProvider:
     'create' calls don't create duplicates.
     """
 
-    name: str = "mock_yookassa"
+    name: str = "mock"
     _state: dict[str, YkPaymentStatus] = None
 
     def __post_init__(self) -> None:
