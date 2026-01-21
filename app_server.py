@@ -7,14 +7,14 @@ from typing import Optional
 from fastapi import FastAPI, Request, HTTPException
 from telegram import Update
 
-from config import load_config
-from db import Db
-from payments.mercadopago_pix import MercadoPagoPixProvider
-from payments.yookassa import YooKassaProvider
-from payments.mock_yookassa import MockYooKassaProvider
-from payments.service import PaymentService
-from payments.service_redirect import RedirectPaymentService
-from bot import build_application
+from src.config import load_config
+from src.db import Db
+from src.payments.mercadopago_pix import MercadoPagoPixProvider
+from src.payments.yookassa import YooKassaProvider
+from src.payments.mock_yookassa import MockYooKassaProvider
+from src.payments.service import PaymentService
+from src.payments.service_redirect import RedirectPaymentService
+from src.bot import build_application
 
 
 cfg = load_config()
