@@ -227,25 +227,24 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if not pay_yk:
                 await q.edit_message_text("YooKassa не настроена.", reply_markup=_pay_methods_menu(cfg))
                 return
-            checkout = pay_yk.start_checkout(
-                payment_id=payment_id,
+
+            # IMPORTANT: сервис сам создаёт payment + attach_checkout_details
+            payment_id = pay_yk.start_checkout(
                 user_id=uid,
                 amount_cents=amount_cents,
-                currency=currency,  # <-- add this IF your wrapper supports it
                 description=cfg.payment_description(plan),
             )
-            db.attach_checkout_details(
-                payment_id=payment_id,
-                external_id=checkout.external_id,
-                pay_url=checkout.pay_url,
-                raw_meta=checkout.raw_meta,
-            )
+
+            p = db.get_payment(payment_id) or {}
+            pay_url = p.get("pay_url")
+            currency_db = p.get("currency") or currency  # на случай если сервис жёстко шьёт RUB
+
             await q.edit_message_text(
                 (
                     "💳 <b>Карта / СБП (YooKassa)</b>\n\n"
-                    f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
+                    f"Сумма: <b>{amount_cents / 100:.2f} {currency_db}</b>\n"
                     f"Платёж: <code>{payment_id}</code>\n\n"
-                    f"Ссылка на оплату:\n{checkout.pay_url}\n\n"
+                    f"Ссылка на оплату:\n{pay_url or '(ссылка не найдена)'}\n\n"
                     "После оплаты вернитесь и нажмите «Проверить оплату»."
                 ),
                 parse_mode=ParseMode.HTML,
@@ -262,23 +261,23 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if not pay_mock:
                 await q.edit_message_text("Mock не настроен.", reply_markup=_pay_methods_menu(cfg))
                 return
-            checkout = pay_mock.start_checkout(
-                payment_id=payment_id,
+
+            # IMPORTANT: pay_mock.start_checkout сам создаёт payment и возвращает payment_id
+            payment_id = pay_mock.start_checkout(
                 user_id=uid,
                 amount_cents=amount_cents,
                 description="TEST: " + cfg.payment_description(plan),
             )
-            db.attach_checkout_details(
-                payment_id=payment_id,
-                external_id=checkout.external_id,
-                pay_url=checkout.pay_url,
-                raw_meta=checkout.raw_meta,
-            )
+
+            # Достаём pay_url из БД (сервис уже сделал attach_checkout_details)
+            p = db.get_payment(payment_id)
+            pay_url = (p or {}).get("pay_url")
+
             await q.edit_message_text(
                 (
                     "🧪 <b>Тестовая оплата (mock)</b>\n\n"
                     f"Платёж: <code>{payment_id}</code>\n\n"
-                    f"Открой ссылку и отметь как оплачено:\n{checkout.pay_url}\n\n"
+                    f"Открой ссылку и отметь как оплачено:\n{pay_url or '(ссылка не найдена)'}\n\n"
                     "Затем нажми «Проверить оплату»."
                 ),
                 parse_mode=ParseMode.HTML,
