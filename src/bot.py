@@ -218,10 +218,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             except Exception as e:
                 logger.exception("PIX checkout failed")
                 await q.edit_message_text(
-                    "⚠️ PIX сейчас не получается создать. Попробуйте позже или выбери другой способ оплаты.",
+                    "⚠️ PIX сейчас не получается создать. Попробуйте позже или выберите другой способ оплаты.",
                     reply_markup=_pay_methods_menu(cfg),
                 )
-                return
+            return
 
         if provider_key == "yookassa":
             if not pay_yk:
