@@ -11,6 +11,10 @@ class Config:
     channel_id: str
     database_url: str
     admin_ids: set[int]
+    admin_chat_id: int
+
+    card_transfer_number: str
+    card_transfer_holder: str
 
     course_id: str
     course_title: str
@@ -52,6 +56,13 @@ def load_config() -> Config:
             if x.isdigit():
                 admin_ids.add(int(x))
 
+    admin_chat_id = int(os.getenv("ADMIN_CHAT_ID", "0").strip() or 0)
+    if not admin_chat_id:
+        admin_chat_id = next(iter(admin_ids), 0)
+
+    card_transfer_number = os.getenv("CARD_TRANSFER_NUMBER", "").strip()
+    card_transfer_holder = os.getenv("CARD_TRANSFER_HOLDER", "").strip()
+
     mp_access_token = os.getenv("MP_ACCESS_TOKEN", "").strip()
     mp_webhook_secret = os.getenv("MP_WEBHOOK_SECRET", "").strip()
 
@@ -87,6 +98,7 @@ def load_config() -> Config:
         channel_id=channel_id,
         database_url=database_url,
         admin_ids=admin_ids,
+        admin_chat_id=admin_chat_id,
         mp_access_token=mp_access_token,
         mp_webhook_secret=mp_webhook_secret,
         yk_shop_id=yk_shop_id,
@@ -98,5 +110,7 @@ def load_config() -> Config:
         welcome_video_url=welcome_video_url,
         lesson_interval_days=lesson_interval_days,
         price_mixed=price_mixed,
-        price_live=price_live
+        price_live=price_live,
+        card_transfer_number=card_transfer_number,
+        card_transfer_holder=card_transfer_holder,
     )
