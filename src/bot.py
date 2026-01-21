@@ -72,7 +72,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # Ensure we have a plan (default mixed)
-    plan = db.get_user_plan(user.id)
+    plan = db.get_user_plan(user_id=user.id)
     if plan is None:
         db.set_user_plan(user.id, Plan.MIXED.value)
         plan = Plan.MIXED.value
