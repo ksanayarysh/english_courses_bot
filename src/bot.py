@@ -262,6 +262,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await q.edit_message_text("Mock не настроен.", reply_markup=_pay_methods_menu(cfg))
                 return
 
+            await q.edit_message_text("⏳ Создаю mock…", reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")]]
+            ))
+
             # IMPORTANT: pay_mock.start_checkout сам создаёт payment и возвращает payment_id
             payment_id = pay_mock.start_checkout(
                 user_id=uid,
