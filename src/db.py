@@ -391,6 +391,7 @@ class Db:
                 row = cur.fetchone()
         return (row["plan"] if row else "mixed")  # default
 
+
     def get_latest_pending_payment(self, user_id: int) -> dict | None:
         """
         Returns the latest pending payment for the user, or None.
