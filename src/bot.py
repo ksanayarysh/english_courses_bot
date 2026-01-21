@@ -13,6 +13,7 @@ from telegram.ext import (
     filters,
 )
 
+from app_server import pay_pix
 from src.config import Config, PRICES
 from src.db import Db
 from src.payments.utils import get_currency_by_provider
@@ -354,15 +355,30 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         payment_id = data.split(":", 1)[1]
         p = db.get_payment(payment_id)
         if not p:
-            await q.edit_message_text("Платёж не найден.", reply_markup=_main_menu())
+            await q.answer("Платёж не найден.", show_alert=True)
             return
 
-        paid = pay.refresh_and_mark_paid_if_needed(payment_id=payment_id)
+        provider_key = p["provider"]
+
+        svc = {
+            "pix": pay_pix,  # MercadoPago PIX service
+            "yookassa": pay_yk,  # Redirect/YooKassa service
+            "mock": pay_mock,  # Redirect/Mock service
+            "card_transfer": None,  # тут только ручная проверка
+        }.get(provider_key)
+
+        if provider_key == "card_transfer":
+            await q.answer("Ожидаем подтверждение админом.", show_alert=True)
+            return
+
+        if not svc:
+            await q.answer("Не могу проверить этот способ оплаты.", show_alert=True)
+            return
+
+        paid = svc.refresh_and_mark_paid_if_needed(payment_id=payment_id)
 
         if paid:
-            await q.edit_message_text(
-                "✅ Оплата подтверждена! Доступ активирован."
-            )
+            await q.edit_message_text("✅ Оплата подтверждена! Доступ активирован.")
         else:
             await q.answer("Пока не вижу оплату. Попробуй чуть позже.", show_alert=False)
         return
