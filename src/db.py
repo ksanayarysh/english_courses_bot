@@ -399,7 +399,7 @@ class Db:
         with  self.connect().cursor() as cur:
             cur.execute(
                 """
-                SELECT payment_id, provider, amount_cents, currency, plan, pay_url, created_at
+                SELECT id, provider, amount_cents, currency, plan, pay_url, created_at
                 FROM payments
                 WHERE user_id = %s
                   AND status = 'pending'
