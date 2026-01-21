@@ -42,6 +42,7 @@ class Db:
             status           TEXT NOT NULL,        -- pending / paid / cancelled / expired
             amount_cents     BIGINT NOT NULL,
             currency         TEXT NOT NULL,        -- BRL / RUB
+            plan             TEXT NULL,
             external_id      TEXT NULL,            -- provider payment id
             idempotency_key  TEXT NULL,            -- for provider create calls
             pay_url          TEXT NULL,            -- redirect URL (YooKassa)
@@ -58,6 +59,7 @@ class Db:
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS raw_meta JSONB;
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_id TEXT;
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider TEXT;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS plan TEXT;  -- <-- ADD THIS
 
         CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
         CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
@@ -186,19 +188,19 @@ class Db:
         return (True, expires_at, "active")
 
     # -------- Payments --------
-    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str) -> str:
+    def create_payment(self, user_id: int, provider: str, amount_cents: int, currency: str, plan: str) -> str:
         pid = _new_id()
         idem = pid  # stable idempotency key for this internal payment
 
         sql = """
         INSERT INTO payments (
-            id, user_id, provider, status, amount_cents, currency,
+            id, user_id, provider, status, amount_cents, currency, plan,
             external_id, idempotency_key, pay_url, raw_meta,
             pix_qr_base64, pix_copy_paste,
             created_at, paid_at
         )
         VALUES (
-            %s, %s, %s, 'pending', %s, %s,
+            %s, %s, %s, 'pending', %s, %s, %s,
             NULL, %s, NULL, NULL,
             NULL, NULL,
             %s, NULL
@@ -206,7 +208,7 @@ class Db:
         """
         with self.connect() as con:
             with con.cursor() as cur:
-                cur.execute(sql, (pid, user_id, provider, amount_cents, currency, idem, now_utc()))
+                cur.execute(sql, (pid, user_id, provider, amount_cents, currency, plan, idem, now_utc()))
             con.commit()
         return pid
 
