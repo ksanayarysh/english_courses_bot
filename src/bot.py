@@ -13,7 +13,6 @@ from telegram.ext import (
     filters,
 )
 
-from app_server import pay_pix
 from src.config import Config, PRICES
 from src.db import Db
 from src.payments.utils import get_currency_by_provider
@@ -361,7 +360,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         provider_key = p["provider"]
 
         svc = {
-            "pix": pay_pix,  # MercadoPago PIX service
+            "pix": pay,  # MercadoPago PIX service
             "yookassa": pay_yk,  # Redirect/YooKassa service
             "mock": pay_mock,  # Redirect/Mock service
             "card_transfer": None,  # тут только ручная проверка
