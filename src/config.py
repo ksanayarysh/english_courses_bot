@@ -6,6 +6,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+PRICES = {
+    "live_only": {
+        "BRL": int(os.getenv("PRICE_LIVE_ONLY_BRL")),
+        "RUB": int(os.getenv("PRICE_LIVE_ONLY_RUB")),
+    },
+    "mixed": {
+        "BRL": int(os.getenv("PRICE_MIXED_BRL")),
+        "RUB": int(os.getenv("PRICE_MIXED_RUB")),
+    },
+}
+
 
 @dataclass(frozen=True)
 class Config:
@@ -26,9 +37,6 @@ class Config:
     # Payments (MercadoPago Pix)
     mp_access_token: str
     mp_webhook_secret: str  # optional, but recommended
-    price_mixed: int
-    price_live: int
-
     # Payments (YooKassa)
     yk_shop_id: str
     yk_secret_key: str
@@ -41,8 +49,14 @@ class Config:
 
     currency: str = "BRL"
 
-    def price_for_plan_cents(self, plan: str) -> int:
-        return self.price_live if plan == "live_only" else self.price_mixed
+    def price_for_plan_currency_cents(self, plan: str, currency: str) -> int:
+        key = f"PRICE_{plan.upper()}_{currency.upper()}"
+        # plan у тебя "live_only"/"mixed", значит ключи станут:
+        # PRICE_LIVE_ONLY_BRL, PRICE_LIVE_ONLY_RUB, PRICE_MIXED_BRL, PRICE_MIXED_RUB
+        v = os.getenv(key)
+        if not v:
+            raise RuntimeError(f"Missing env var: {key}")
+        return int(v)
 
     def payment_description(self, plan: str) -> str:
         if plan == "live_only":
@@ -81,8 +95,6 @@ def load_config() -> Config:
     yk_shop_id = os.getenv("YK_SHOP_ID", "").strip()
     yk_secret_key = os.getenv("YK_SECRET_KEY", "").strip()
 
-    price_mixed = int(os.getenv("PRICE_MIXED", "2990").strip())
-    price_live = int(os.getenv("PRICE_LIVE", "2990").strip())
 
     pay_provider_default = os.getenv("PAY_PROVIDER_DEFAULT", "pix").strip().lower()
 
@@ -121,8 +133,6 @@ def load_config() -> Config:
         course_title=course_title,
         welcome_video_url=welcome_video_url,
         lesson_interval_days=lesson_interval_days,
-        price_mixed=price_mixed,
-        price_live=price_live,
         card_transfer_number=card_transfer_number,
         card_transfer_holder=card_transfer_holder,
     )

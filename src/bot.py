@@ -13,11 +13,22 @@ from telegram.ext import (
     filters,
 )
 
-from src.config import Config
+from src.config import Config, PRICES
 from src.db import Db
+from src.payments.utils import get_currency_by_provider
 from src.plans import Plan, get_plan_label
 from src.payments.service import PaymentService
 from src.payments.service_redirect import RedirectPaymentService
+
+def format_prices(plan: str) -> str:
+    brl = PRICES[plan]["BRL"] / 100
+    rub = PRICES[plan]["RUB"] / 100
+
+    return (
+        f"💰 Стоимость:\n"
+        f"• <b>{brl:,.2f} BRL</b>\n"
+        f"• <b>{rub:,.0f} ₽</b>"
+    )
 
 
 def _main_menu() -> InlineKeyboardMarkup:
@@ -95,7 +106,6 @@ async def _show_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"Привет, {user.first_name or 'друг'}!\n\n"
         f"Формат: <b>{get_plan_label(plan)}</b>\n"
         f"Оплата за месяц: <b>{amount/100:.2f} {cfg.currency}</b>\n\n"
-        "Жми кнопку."
     )
     await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=_main_menu())
 
@@ -132,10 +142,20 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data == "pay_menu":
         plan = db.get_user_plan(user_id=uid) or Plan.MIXED.value
-        amount = cfg.price_for_plan_cents(plan)
+
+        # две валюты, 4 цены (по плану) должны лежать в env и читаться cfg:
+        # PRICE_LIVE_ONLY_BRL / PRICE_LIVE_ONLY_RUB / PRICE_MIXED_BRL / PRICE_MIXED_RUB
+        brl_cents = cfg.price_for_plan_currency_cents(plan, "BRL")
+        rub_cents = cfg.price_for_plan_currency_cents(plan, "RUB")
+
         await q.edit_message_text(
-            f"Выбери способ оплаты.\n\nФормат: <b>{get_plan_label(plan)}</b>\n"
-            f"Сумма: <b>{amount/100:.2f} </b>",
+            text=(
+                "Выбери способ оплаты.\n"
+                f"Формат: <b>{get_plan_label(plan)}</b>\n"
+                "Стоимость:\n"
+                f"• <b>{brl_cents / 100:.2f} BRL</b>\n"
+                f"• <b>{rub_cents / 100:.0f} ₽</b>"
+            ),
             parse_mode=ParseMode.HTML,
             reply_markup=_pay_methods_menu(cfg),
         )
@@ -144,26 +164,26 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if data.startswith("pay:"):
         provider_key = data.split(":", 1)[1]
         plan = db.get_user_plan(user_id=uid) or Plan.MIXED.value
-        amount_cents = cfg.price_for_plan_cents(plan)
 
-        # Create a payment record first (so we always have payment_id for correlation)
-        # Provider-specific external_id is attached later.
+        # single source of truth for currency/amount
+        currency = get_currency_by_provider(provider_key)
+        amount_cents = PRICES[plan][currency]
+
         payment_id = db.create_payment(
             user_id=uid,
             provider=provider_key,
             amount_cents=amount_cents,
-            currency=cfg.currency,
+            currency=currency,  # <-- FIX: was cfg.currency
             plan=plan,
         )
 
         if provider_key == "pix":
-            # MercadoPago PIX
             mp = pay.providers["mercadopago_pix"]
             checkout = mp.create_pix_checkout(
                 payment_id=payment_id,
                 user_id=uid,
                 amount_cents=amount_cents,
-                currency=cfg.currency,
+                currency=currency,  # <-- FIX: was cfg.currency
                 description=cfg.payment_description(plan),
             )
             db.attach_checkout_details(
@@ -175,10 +195,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await q.edit_message_text(
                 (
                     "💳 <b>Оплата PIX</b>\n\n"
-                    f"Сумма: <b>{amount_cents/100:.2f} {cfg.currency}</b>\n"
+                    f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
                     f"Платёж: <code>{payment_id}</code>\n\n"
-                    "Открой банк → PIX → Copia e Cola и вставь код из сообщения.\n"
-                    "После оплаты нажми «Проверить оплату»."
+                    "Откройте приложение банка → PIX → Copia e Cola и вставь код из сообщения.\n"
+                    "После оплаты нажмите «Проверить оплату»."
                 ),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
@@ -198,6 +218,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 payment_id=payment_id,
                 user_id=uid,
                 amount_cents=amount_cents,
+                currency=currency,  # <-- add this IF your wrapper supports it
                 description=cfg.payment_description(plan),
             )
             db.attach_checkout_details(
@@ -209,10 +230,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await q.edit_message_text(
                 (
                     "💳 <b>Карта / СБП (YooKassa)</b>\n\n"
-                    f"Сумма: <b>{amount_cents/100:.2f} {cfg.currency}</b>\n"
+                    f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"
                     f"Платёж: <code>{payment_id}</code>\n\n"
                     f"Ссылка на оплату:\n{checkout.pay_url}\n\n"
-                    "После оплаты вернись и нажми «Проверить оплату»."
+                    "После оплаты вернитесь и нажмите «Проверить оплату»."
                 ),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
@@ -232,6 +253,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 payment_id=payment_id,
                 user_id=uid,
                 amount_cents=amount_cents,
+                currency=currency,  # <-- optional; but keep consistent
                 description="TEST: " + cfg.payment_description(plan),
             )
             db.attach_checkout_details(
@@ -266,7 +288,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await q.edit_message_text(
                 (
                     "💳 <b>Перевод на карту</b>\n\n"
-                    f"Сумма: <b>{amount_cents/100:.2f} {cfg.currency}</b>\n"
+                    f"Сумма: <b>{amount_cents / 100:.2f} {currency}</b>\n"  # <-- FIX
                     f"Карта: <code>{cfg.card_transfer_number}</code>{holder_line}\n\n"
                     "После перевода загрузите подтверждение (скрин/чек)."
                 ),
@@ -287,7 +309,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         payment_id = data.split(":", 1)[1]
         context.user_data["awaiting_proof_payment_id"] = payment_id
         await q.edit_message_text(
-            "Пришли сюда подтверждение оплаты (фото или файл).",
+            "Пришлите сюда подтверждение оплаты (фото или файл).",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="pay_menu")]]),
         )
         return
