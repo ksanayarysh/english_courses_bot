@@ -89,7 +89,7 @@ async def _show_main(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user = update.effective_user
     if not user:
         return
-    plan = db.get_user_plan(user.id) or Plan.MIXED.value
+    plan = db.get_user_plan(user_id=user.id) or Plan.MIXED.value
     amount = cfg.price_for_plan_cents(plan)
 
     text = (

@@ -37,6 +37,14 @@ class Config:
     # Webhooks
     public_base_url: str    # e.g. https://your-service.up.railway.app
 
+    def price_for_plan_cents(self, plan: str) -> int:
+        return self.price_live if plan == "live_only" else self.price_mixed
+
+    def payment_description(self, plan: str) -> str:
+        if plan == "live_only":
+            return "Курс: все занятия вживую (1 месяц)"
+        return "Курс: вживую + видео (1 месяц)"
+
 
 def load_config() -> Config:
     bot_token = os.getenv("BOT_TOKEN", "").strip()
