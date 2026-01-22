@@ -334,7 +334,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         was_paid = (p.get("status") == "paid")
 
         svc = {
-            "pix": pay,          # MercadoPago PIX service
+            "mercadopago_pix": pay,          # MercadoPago PIX service
             "yookassa": pay_yk,  # Redirect/YooKassa service
             "mock": pay_mock,    # Redirect/Mock service
             "card_transfer": None,
