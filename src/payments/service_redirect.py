@@ -47,7 +47,7 @@ class RedirectPaymentService:
         amount_cents: int,
         description: str,
         plan: str,
-        currency: str = "RUB",
+        currency: str,
     ) -> str:
         payment_id = self.db.create_payment(
             user_id=user_id,
